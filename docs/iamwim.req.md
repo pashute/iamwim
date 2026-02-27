@@ -1,7 +1,26 @@
 # iamWim · Feature & Technology Specification
 
-> Living document. Sections: Technology · Development · Components · Visualizer
+> Living document. Sections: What We Are Building · Technology · Development · Components · Visualizer
 > Table columns: # · Name · Details · Open Questions · Done In (milestone/sprint)
+
+---
+
+## 0. What We Are Building
+
+> This section explains the concepts, approaches, and tools at the heart of iamWim — what each one is, and why it belongs here.
+
+| # | Name | What It Is | Role in iamWim | Open Questions | Done In |
+|---|------|-----------|----------------|----------------|---------|
+| 0.1 | **iamWim** | A logic-first, graph-based reasoning system that learns developmentally — starting with a child's vocabulary and expanding through structured experience. LLMs are available but peripheral. | The whole project. Everything below serves this. | — | — |
+| 0.2 | **PIERCE** | **P**ipeline for **I**terative and **E**volutionary **R**easoning, **C**ritique and **E**xpansion. A replacement adapter for the LLM inference layer — built on symbolic logic, rule engines, and graph traversal instead of language models. | The reasoning core. PIERCE is what fires when iamWim needs to think — before any LLM is consulted. | Where exactly does PIERCE end and the Orchestrator begin? Define the boundary. | M1 |
+| 0.3 | **Iterative Refinement Pipeline** | A processing pipeline where outputs are passed back through validation and improvement steps repeatedly until they meet quality thresholds. Not one-shot — cyclic. | PIERCE's execution model. A conclusion is not accepted until it has passed N refinement cycles without degrading. | How many cycles before accepting? Configurable per context? | M1 |
+| 0.4 | **Conjecture–Criticism Cycle** | Inspired by Popper's falsificationism: the system proposes a conclusion (conjecture), then actively tries to break it (criticism) using its own rules and graph structure. Repeat until it survives criticism or is replaced. | iamWim's internal quality loop inside PIERCE. Replaces hallucination-prone one-pass LLM inference with adversarial self-checking. | How is the "critic" role separated from the "proposer" role in the architecture? Separate rule sets? | M1 |
+| 0.5 | **Modular Architecture** | Each capability (lexicon building, topic management, output translation, reasoning, memory) is a discrete, replaceable module with a defined interface. Nothing is hardwired. | Allows iamWim to grow without refactoring its core. New reasoning modes, new storage backends, new output formats — all plug in. | Define module contract / interface standard early. | M0 |
+| 0.6 | **Unifying Reasoning Modes** | A spectrum of reasoning from pure symbolic/logical (Prolog, rule engines) through probabilistic (weighted graph inference) to generative (LLM consult). All modes are available; the system chooses based on context and confidence. | iamWim does not bet on one reasoning paradigm. Logical checking first. Probabilistic inference second. LLM last resort. | How does the system decide which mode to invoke? Confidence threshold? Rule-based selection? | M2 |
+| 0.7 | **Data Integration** | Connecting PIERCE's reasoning outputs back to the persistent lexicon graphs in Memgraph and Supabase. Every concluded fact, link, and weight change is written back to the store — nothing floats free. | Closes the loop between reasoning and memory. iamWim remembers what it concludes. | Transaction model — how do we roll back a bad conclusion? | M2 |
+| 0.8 | **First Lexicon (Manual + AI-Assisted)** | The seed lexicon, built by hand with AI assistance. A carefully constructed starting graph to test and stress the architecture before automated lexicon building begins. Reveals what is actually needed in practice. | Proof of concept and calibration tool. Nothing tests a data model like filling it with real data. | What domain for the first lexicon? Child concepts? Basic physical world? | M1 |
+| 0.9 | **Child Vocabulary Seed** | iamWim begins with the vocabulary of a toddler-level reader — simple nouns, verbs, relationships, basic questions. Complexity is earned, not assumed. Sourced from graded reader word lists and toddler NLP corpora. | Forces the architecture to handle genuine knowledge growth rather than assuming a pre-loaded adult knowledge base. Mirrors human cognitive development. | Which graded reader corpus? Dolch list? Oxford 3000 foundation? | M1 |
+| 0.10 | **Stanza (Stanford NLP)** | Stanford's production NLP library — tokenisation, POS tagging, dependency parsing, named entity recognition, coreference resolution. Accessed via the `stanza-api` project as a local service. | iamWim's linguistic front door. Raw text (questions, human input, documents) is parsed by Stanza before entering the lexicon graph. Stanza turns language into structure; iamWim reasons over the structure. | Does stanza-api run comfortably alongside Memgraph and Ollama on local hardware? Memory budget? | M1 |
 
 ---
 
@@ -10,8 +29,7 @@
 | # | Name | Details | Open Questions | Done In |
 |---|------|---------|----------------|---------|
 | 1.1 | **Runtime** | Node.js (LTS) — event-driven, non-blocking, native JS ecosystem | Version pinning strategy? `.nvmrc`? | M0 |
-| 1.2 | **Symbolic Logic Engine** | [Tau-Prolog](http://tau-prolog.org/) — full Prolog interpreter in JS. First resort before LLM. Handles unification, backtracking, rule firing | Can it handle graph-scale queries without perf hit? | M1 |
-| 1.3 | **Forward Chaining / Rules** | [Nools](https://github.com/noolsjs/nools) — Rete-algorithm rule engine in JS. Fires rules against working memory facts | Still maintained? Evaluate vs. hand-rolled Rete | M1 |
+| 1.2 | **Forward Chaining / Rules** | [Nools](https://github.com/noolsjs/nools) — Rete-algorithm rule engine in JS. Fires rules against working memory facts. First resort before LLM. | Still maintained? Evaluate vs. hand-rolled Rete | M1 |
 | 1.4 | **Fallback: Local LLM** | [Ollama](https://ollama.com/) — run small models locally (Mistral, Phi-3, Gemma). Called only via `consult()` gate in orchestrator | Which model fits hardware constraints? Quantization level? | M2 |
 | 1.5 | **Graph Database** | [Memgraph](https://memgraph.com/) — in-memory graph DB, Cypher query language, fast traversal. Primary persistence for all lexicon graphs | Memgraph vs. Neo4j for local dev? License? | M1 |
 | 1.6 | **Relational / Meta Store** | [Supabase](https://supabase.com/) (Postgres) — session metadata, user trust levels, discussion thread index, audit log | Self-hosted or cloud? Row-level security needed? | M1 |
@@ -70,7 +88,7 @@
 
 | # | Name | Details | Open Questions | Done In |
 |---|------|---------|----------------|---------|
-| 3.1.1 | **Rule Engine** | Nools or Tau-Prolog rules fire against the active lexicon graph's working memory. No LLM in the loop unless `consult()` explicitly called | Rule definition format — Prolog clauses or Nools DSL? | M1 |
+| 3.1.1 | **Rule Engine** | Nools Rete-based rules fire against the active lexicon graph's working memory. No LLM in the loop unless `consult()` explicitly called | Rule definition format — Nools DSL or hand-rolled Rete? | M1 |
 | 3.1.2 | **Working Context** | Loaded topic subgraphs held in memory. Orchestrator operates only on what is loaded — sparse by design | Max loaded topic size? Memory ceiling? | M1 |
 | 3.1.3 | **consult() Gate** | Single function that calls local LLM. Output is returned as raw text, then parsed and optionally integrated into lexicon as attributed nodes | Trust level for LLM-sourced nodes vs human-sourced? | M2 |
 | 3.1.4 | **Self-Awareness Loop** | Orchestrator maintains a self-lexicon — a graph of its own state, loaded topics, recent decisions, and confidence levels | How detailed is the self-model at M1 vs M3? | M3 |
