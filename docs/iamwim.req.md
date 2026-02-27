@@ -143,4 +143,68 @@
 
 ---
 
+## 5. Data Modeling
+
+> All memory, reasoning state, knowledge, and discourse in iamWim is stored as **lexicon graphs**. There is no separate short-term buffer or long-term store — the distinction is structural and topological within the graph system. This section is the authoritative spec for all graph types, node schemas, and link models.
+
+### 5.1 Lexicon Graph — Types
+
+| # | Name | Details | Open Questions | Done In |
+|---|------|---------|----------------|---------|
+| 5.1.1 | **Domain Lexicon** | Persistent, structured knowledge about a subject domain (physical world, biochemistry, Akkadian grammar, etc.). Built with AI assistance and human curation. Logic-based, tagged, layered, human-readable. NOT statistical. | One Memgraph database per domain or labelled subgraphs? | M1 |
+| 5.1.2 | **Discussion Lexicon** | Built on the fly per conversation session. Has a thread subject title. Captures current, planned, and discussed topics; discussion branches; goals, intents, and tasks accumulated per request and per response. Request/response pairs stored as graph entries tied to topic nodes — not raw text. | Persist all discussion lexicons or only flagged ones? | M1 |
+| 5.1.3 | **Self Lexicon** | The system's graph of its own state — loaded topics, active rules, recent decisions, confidence levels, known unknowns. Enables self-awareness loop in the orchestrator. | How detailed at M1? Start minimal. | M3 |
+| 5.1.4 | **Deep Lexicon** | Fully structured, attributed, weighted, with rich internal topic graphs. Built over time through curation and learning. | Promotion criteria from jotted → deep | M2 |
+| 5.1.5 | **Jotted Lexicon** | Lightweight, fast, note-like. Created by the system itself to capture something quickly without full elaboration. Promotable to a deep lexicon later. | File-based (JSON) or Memgraph subgraph? | M1 |
+
+### 5.2 Lexicon Graph — Internal Structure
+
+| # | Name | Details | Open Questions | Done In |
+|---|------|---------|----------------|---------|
+| 5.2.1 | **Entity Foundation Layer** | The nodes. Entities of any type: concepts, objects, agents, events, facts, intentions, tasks, questions, answers, relations, meta-concepts. Every node has: `id`, `label`, `type`, `confidence` (0–1), `source`, `sourceType`, `tags[]`, `createdAt`, `version` | Final node schema — define before M1 | M1 |
+| 5.2.2 | **Link Layer** | Named, bidirectional, weighted edges. Every link has: `type` (named relation), `weight` (signed float — positive affirms, negative contradicts or deprecates), `attributes{}`, `confidence`, `source`, `sourceType`, `tags[]`. A link is not merely a connection — it is a typed, weighted, annotated relationship. | Attribute schema for links — open or closed vocabulary? | M1 |
+| 5.2.3 | **Synonym / Equivalence Mappings** | Special link type: `EQUIVALENT_TO`. Captures that "have" = "owns", "big" = "large", etc. Used by the orchestrator to resolve surface variation in questions without LLM. AI-assisted at build time, human-verified. | Store as links in the graph or a separate lookup table? | M1 |
+| 5.2.4 | **Topic Graph (Internal)** | Each lexicon contains an internal topic graph — a structured map of subjects, themes, and domains present in that lexicon. Topics are nodes; their relationships (broader, narrower, related, prerequisite) are links. | Topic node schema — separate from entity nodes or same type with a flag? | M1 |
+| 5.2.5 | **Huffman Priority Tree** | Each topic graph maintains a priority tree over its nodes. Commonly-needed or high-confidence nodes are shortest path. Updated as access patterns change. Enables fast retrieval without full graph sweep. | Rebuild on access or incremental update? | M2 |
+
+### 5.3 Topic Properties
+
+| # | Name | Details | Open Questions | Done In |
+|---|------|---------|----------------|---------|
+| 5.3.1 | **Load State** | Each topic has a state: `loaded` (in working context) or `dormant` (persisted, not active). Orchestrator operates only on loaded topics — sparse by design. | LRU eviction, priority-based, or manual only? | M2 |
+| 5.3.2 | **Availability Horizon** | Topics tagged as `immediate` (needed now) or `long-run` (background, available but not foregrounded). | How does orchestrator decide horizon? Rule-based or weight-driven? | M2 |
+| 5.3.3 | **External Links** | A topic in one lexicon can link to topics in other lexicons without loading them fully — lazy resolution. Cross-lexicon traversal on demand only. | Graph federation in Memgraph — labelled subgraph approach? | M2 |
+
+### 5.4 Question & Answer Modeling
+
+| # | Name | Details | Open Questions | Done In |
+|---|------|---------|----------------|---------|
+| 5.4.1 | **Question Types** | All incoming questions classified before reasoning: `identity` (who is Jane?), `category` (is Jane a girl?), `quantity` (how many dogs does Jane have?), `property`, `relation`, `existence`, `comparison`, `procedural`. Classification via Stanza parse + rule matching — no LLM. | Full taxonomy of question types needed — define in M1 | M1 |
+| 5.4.2 | **Answer Type Expectation** | Every question node carries an expected answer type: `entity`, `boolean`, `number`, `list`, `relation`, `description`. The orchestrator knows before searching what shape the answer should be. | How to handle ambiguous answer types? | M1 |
+| 5.4.3 | **Entity–Relation–Entity Triples** | Core reasoning unit. Example: `Jane –[OWNS]→ Spot`, `Spot –[IS_A]→ Dog`. Questions like "how many dogs does Jane have?" decompose to: find entity Jane, follow OWNS (or EQUIVALENT_TO OWNS) links, filter targets by IS_A Dog, count. Pure graph traversal, no LLM. | Triple storage as Memgraph relationships directly — yes | M1 |
+| 5.4.4 | **Typo / Variant Tolerance** | "is jane a gril?" should resolve to "is Jane a girl?". Handled at the Stanza pre-processing layer + fuzzy entity lookup in the graph. Not LLM-based. | Levenshtein threshold? Phonetic matching (Soundex)? | M2 |
+| 5.4.5 | **LLM Fallback + Learning** | When graph traversal fails to answer, `consult()` is called. But the result is not just returned — it is parsed, mapped back to entity-relation-entity triples, and added to the lexicon as new attributed nodes. iamWim learns from every LLM fallback. | Confidence level for LLM-sourced nodes vs human-sourced? | M2 |
+
+### 5.5 Generalization Model
+
+| # | Name | Details | Open Questions | Done In |
+|---|------|---------|----------------|---------|
+| 5.5.1 | **Generalization Graph** | A versioned, sliced graph layer that represents abstract patterns — not facts, but structures. Example: "things that have a quantity of X" or "entities that can own other entities of category Y". Updates in real-time as new facts are added. | Separate Memgraph subgraph or overlay on entity layer? | M2 |
+| 5.5.2 | **Versioning & Slicing** | Every generalization has a version. Slices allow the system to reason over generalizations valid at a given time or confidence level. Old versions are not deleted — they are superseded with a link. | Version as node property or separate version nodes? | M2 |
+| 5.5.3 | **Domain Concept Grasp** | When iamWim reads a domain text (e.g. Biochemistry year 3, Akkadian grammar), it grasps new concepts by connecting them to existing vocabulary and structure — not just words, but typed relationships and categories. New nodes connect into the generalization graph, not just the entity layer. | How is "grasping" triggered? Confidence threshold on new links? | M3 |
+| 5.5.4 | **Unknown Domain Bootstrapping** | When asked "what is the mmm of hmf" — iamWim checks: does hmf exist as an entity? Does it have mmm-type links? If not, it notes the unknown, asks for help or consults LLM, and builds the structure from the answer. | How does system signal "I don't know this domain yet"? | M2 |
+
+### 5.6 Meta-Concepts (Predetermined)
+
+| # | Name | Details | Open Questions | Done In |
+|---|------|---------|----------------|---------|
+| 5.6.1 | **Goals** | Top-level intent nodes. Every discussion lexicon and task context has at least one goal node. Goals have sub-goals. | Goal schema — `id`, `description`, `status`, `priority`, `parentGoal`? | M1 |
+| 5.6.2 | **Sub-Goals** | Decomposed goals. A goal may have N sub-goals, each of which may have further sub-goals. Recursive. | Max depth? Or unconstrained? | M1 |
+| 5.6.3 | **Tasks** | Concrete actionable units attached to a sub-goal. A task has a status: `pending`, `active`, `done`, `failed`. | Task assignment — to orchestrator, to human, to LLM? | M1 |
+| 5.6.4 | **Sequences** | Ordered lists of tasks or sub-goals. A sequence is a meta-node with ordered `NEXT` links between its members. | Parallel sequences (AND) vs alternative sequences (OR)? | M2 |
+| 5.6.5 | **States** | Named snapshots of a context's condition at a point in time. Used to track progress, enable rollback, and reason about change. | State as a node snapshot or a diff from previous state? | M2 |
+| 5.6.6 | **Scoring Tags** | Metadata tags on any node or link carrying a quality signal: `coherent`, `redundant`, `certain`, `uncertain`, `verified`, `deprecated`, `llm-sourced`, `human-verified`, `inferred`. Used by the Tester component and the Generalization Model. | Closed vocabulary of tags or extensible? | M1 |
+
+---
+
 *iamWim · Features & Spec · Living document — sections will grow*
